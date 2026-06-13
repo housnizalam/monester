@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:super_clipboard/super_clipboard.dart';
 
 import '../models/creature.dart';
 import '../services/creature_storage.dart';
@@ -74,6 +75,109 @@ class _CreatureDetailsPageState extends State<CreatureDetailsPage> {
     setState(() {});
   }
 
+  Future<void> copyImageFileToClipboard(String imagePath) async {
+    try {
+      final File imageFile = File(imagePath);
+      final bool exists = await imageFile.exists();
+      final clipboard = SystemClipboard.instance;
+
+      if (!exists || clipboard == null) {
+        throw Exception('Clipboard unavailable or file does not exist');
+      }
+
+      final DataWriterItem item = DataWriterItem();
+      item.add(Formats.fileUri(Uri.file(imageFile.path)));
+      await clipboard.write([item]);
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('تم نسخ الصورة بنجاح'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('تعذر نسخ الصورة'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  Future<void> showImageContextMenu(Offset position, String path) async {
+    final String? selected = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        position.dx,
+        position.dy,
+        position.dx,
+        position.dy,
+      ),
+      items: const [
+        PopupMenuItem<String>(
+          value: 'copy_image',
+          child: Text('نسخ الصورة'),
+        ),
+      ],
+    );
+
+    if (selected == 'copy_image') {
+      await copyImageFileToClipboard(path);
+    }
+  }
+
+  Future<void> showVideoPromptsDialog() async {
+    final Map<String, String> prompts = creature.videoPrompts;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('اختر حركة الفيديو'),
+          content: SizedBox(
+            width: 500,
+            height: 600,
+            child: ListView(
+              children: prompts.entries.map((entry) {
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: ElevatedButton(
+                    onPressed: () async {
+                      await Clipboard.setData(ClipboardData(text: entry.value));
+
+                      if (!dialogContext.mounted) return;
+                      Navigator.of(dialogContext).pop();
+
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('تم نسخ برومبت التحريك بنجاح'),
+                          duration: Duration(seconds: 2),
+                        ),
+                      );
+                    },
+                    child: Text(entry.key),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('إغلاق'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final String pageTitle =
@@ -113,6 +217,12 @@ class _CreatureDetailsPageState extends State<CreatureDetailsPage> {
                       children: creature.images
                           .map(
                             (path) => GestureDetector(
+                              onSecondaryTapDown: (details) async {
+                                await showImageContextMenu(
+                                  details.globalPosition,
+                                  path,
+                                );
+                              },
                               onDoubleTap: () {
                                 Navigator.push(
                                   context,
@@ -278,19 +388,28 @@ class _CreatureDetailsPageState extends State<CreatureDetailsPage> {
                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 12),
-                  ElevatedButton(
-                    onPressed: () => copyText(creature.prePrompt),
-                    child: const Text('نسخ ما قبل البرومبت'),
-                  ),
-                  const SizedBox(height: 8),
-                  ElevatedButton(
-                    onPressed: () => copyText(creature.prompt),
-                    child: const Text('نسخ برومبت الصورة'),
-                  ),
-                  const SizedBox(height: 8),
-                  ElevatedButton(
-                    onPressed: () => copyText(creature.afterBuild),
-                    child: const Text('نسخ ما بعد إنشاء الصورة'),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
+                    children: [
+                      ElevatedButton(
+                        onPressed: () => copyText(creature.prePrompt),
+                        child: const Text('نسخ ما قبل البرومبت'),
+                      ),
+                      ElevatedButton(
+                        onPressed: () => copyText(creature.prompt),
+                        child: const Text('نسخ برومبت الصورة'),
+                      ),
+                      ElevatedButton(
+                        onPressed: () => copyText(creature.afterBuild),
+                        child: const Text('نسخ ما بعد إنشاء الصورة'),
+                      ),
+                      ElevatedButton.icon(
+                        onPressed: showVideoPromptsDialog,
+                        icon: const Icon(Icons.movie_creation_outlined),
+                        label: const Text('تحريك'),
+                      ),
+                    ],
                   ),
                 ],
               ),
